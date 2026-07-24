@@ -3,10 +3,12 @@ import requests
 import pandas as pd
 from datetime import datetime, date
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 st.set_page_config(page_title="Financas do Casal", page_icon="💰", layout="wide", initial_sidebar_state="expanded")
 
-API_URL = os.environ.get("API_URL", "")
+API_URL = 'https://script.google.com/macros/s/AKfycbwHV5_tLRl4F52tJBT3ttw605fwLBfgLa5823DrNqQjDnfbRs90ZOEighmhlHTo-H1Z/exec'
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CSS COMPLETO
