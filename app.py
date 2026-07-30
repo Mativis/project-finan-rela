@@ -14,6 +14,7 @@ st.set_page_config(
 )
 
 API_URL = os.getenv("API_URL", "")
+_http = requests.Session()
 
 st.markdown("""
 <style>
@@ -500,19 +501,35 @@ MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"
 def api(metodo, aba, dados=None):
     try:
         if metodo == "post":
-            r = requests.post(API_URL, json={"aba": aba, "valores": dados}, timeout=15)
+            r = _http.post(API_URL, json={"aba": aba, "valores": dados}, timeout=30)
         elif metodo == "delete":
-            r = requests.delete(API_URL, params={"aba": aba, "id": dados}, timeout=15)
+            r = _http.delete(API_URL, params={"aba": aba, "id": dados}, timeout=30)
         else:
-            r = requests.get(API_URL, params={"acao": metodo, "aba": aba}, timeout=15)
+            r = _http.get(API_URL, params={"acao": metodo, "aba": aba}, timeout=30)
+
         if r.status_code == 200:
-            return r.json()
+            j = r.json()
+            if isinstance(j, dict) and j.get("_httpCode") and j["_httpCode"] >= 400:
+                erro = j.get("erro", j.get("mensagem", f"Erro {j['_httpCode']}"))
+                st.error(f"❌ Servidor: {erro}")
+                return None
+            return j
+        else:
+            try:
+                msg = r.json().get("erro", r.text[:200]) if r.text else f"HTTP {r.status_code}"
+            except Exception:
+                msg = f"HTTP {r.status_code}"
+            st.error(f"❌ {msg}")
+            return None
+
     except requests.exceptions.Timeout:
-        st.error("⏱️ Conexao excedeu o tempo limite. Verifique se a URL do Web App esta correta e se o servico esta ativo.")
+        st.error("⏱️ Tempo limite excedido. Verifique se o Web App esta respondendo.")
     except requests.exceptions.ConnectionError:
-        st.error("🔌 Nao foi possivel conectar. Verifique a URL do Web App e sua conexao de internet.")
+        st.error("🔌 Nao foi possivel conectar. Verifique a URL do Web App.")
+    except requests.exceptions.JSONDecodeError:
+        st.error("📄 Resposta invalida do servidor. Verifique a URL do Web App.")
     except Exception as e:
-        st.error(f"❌ Erro inesperado: {e}")
+        st.error(f"❌ Erro: {e}")
     return None
 
 def ler(aba):

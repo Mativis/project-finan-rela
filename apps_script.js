@@ -172,7 +172,9 @@ function doPut(e) {
   }
 }
 
-function resposta(codigo, conteudo, callback) {
+function resposta(httpCode, conteudo, callback) {
+  if (typeof conteudo !== "object" || conteudo === null) conteudo = {};
+  conteudo._httpCode = httpCode;
   var json = JSON.stringify(conteudo);
   var output = ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
   if (callback) {
