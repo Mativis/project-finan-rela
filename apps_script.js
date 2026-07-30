@@ -1,4 +1,3 @@
-// ─── SETUP INICIAL ────────────────────────────────────────────────────────────
 function setupBancoDados() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -21,9 +20,8 @@ function setupBancoDados() {
 
   try { ss.deleteSheet(ss.getSheetByName("Sheet1")); } catch(e){}
 
-  // Deploy manual
   var url = ScriptApp.getService().getUrl();
-  if (!url) url = "Publicar > Implantar como aplicativo da web";
+  if (!url) url = "Apos implantar como Web App";
 
   SpreadsheetApp.getUi().alert(
     "Setup concluido!\n\n" +
@@ -42,26 +40,26 @@ function criarAba(ss, nome, cabecalho) {
   s = ss.insertSheet(nome);
   s.appendRow(cabecalho);
   var r = s.getRange(1, 1, 1, cabecalho.length);
-  r.setFontWeight("bold").setBackground("#4a86c8").setFontColor("#ffffff");
+  r.setFontWeight("bold").setBackground("#4f46e5").setFontColor("#ffffff");
   s.setFrozenRows(1);
   return s;
 }
 
-// ─── WEB APP API ──────────────────────────────────────────────────────────────
 function doGet(e) {
-  var acao = e.parameter.acao || "";
-  var aba = e.parameter.aba || "";
+  var acao = e.parameter.acao || e.parameter.action || "";
+  var aba = e.parameter.aba || e.parameter.sheet || "";
+  var callback = e.parameter.callback || "";
 
-  if (!aba) return resposta(400, "Parametro 'aba' obrigatorio");
+  if (!aba) return resposta(400, {erro: "Parametro 'aba' obrigatorio"}, callback);
 
   try {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(aba);
-    if (!sheet) return resposta(404, "Aba '" + aba + "' nao encontrada");
+    if (!sheet) return resposta(404, {erro: "Aba '" + aba + "' nao encontrada"}, callback);
 
-    if (acao == "ler") {
+    if (acao == "ler" || acao == "read") {
       var dados = sheet.getDataRange().getValues();
-      if (dados.length < 2) return resposta(200, []);
+      if (dados.length < 2) return resposta(200, [], callback);
       var cabecalho = dados[0];
       var linhas = [];
       for (var i = 1; i < dados.length; i++) {
@@ -71,73 +69,116 @@ function doGet(e) {
         }
         linhas.push(obj);
       }
-      return resposta(200, linhas);
+      return resposta(200, linhas, callback);
     }
 
-    if (acao == "proximo_id") {
+    if (acao == "proximo_id" || acao == "next_id") {
       var dados = sheet.getDataRange().getValues();
-      if (dados.length < 2) return resposta(200, {proximo_id: "1"});
+      if (dados.length < 2) return resposta(200, {proximo_id: "1"}, callback);
       var ids = [];
       for (var i = 1; i < dados.length; i++) {
         ids.push(parseInt(dados[i][0]) || 0);
       }
-      return resposta(200, {proximo_id: String(Math.max.apply(null, ids) + 1)});
+      return resposta(200, {proximo_id: String(Math.max.apply(null, ids) + 1)}, callback);
     }
 
-    return resposta(400, "Acao invalida");
+    if (acao == "ping" || acao == "health") {
+      return resposta(200, {status: "ok", mensagem: "API funcionando", abas: ss.getSheets().map(function(s){ return s.getName(); })}, callback);
+    }
+
+    return resposta(400, {erro: "Acao invalida: " + acao}, callback);
   } catch(err) {
-    return resposta(500, "Erro: " + err.message);
+    return resposta(500, {erro: "Erro interno: " + err.message}, callback);
   }
 }
 
 function doPost(e) {
+  var callback = "";
   try {
-    var dados = JSON.parse(e.postData.contents);
-    var aba = dados.aba || "";
-    var valores = dados.valores || [];
+    var raw = e.postData.contents;
+    var dados = JSON.parse(raw);
+    var aba = dados.aba || dados.sheet || "";
+    var valores = dados.valores || dados.values || [];
+    callback = dados.callback || "";
 
-    if (!aba) return resposta(400, "Parametro 'aba' obrigatorio");
-    if (!valores.length) return resposta(400, "Parametro 'valores' obrigatorio");
+    if (!aba) return resposta(400, {erro: "Parametro 'aba' obrigatorio"}, callback);
+    if (!valores || !valores.length) return resposta(400, {erro: "Parametro 'valores' obrigatorio"}, callback);
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(aba);
-    if (!sheet) return resposta(404, "Aba '" + aba + "' nao encontrada");
+    if (!sheet) return resposta(404, {erro: "Aba '" + aba + "' nao encontrada"}, callback);
 
     sheet.appendRow(valores);
-    return resposta(200, {status: "ok", mensagem: "Registro adicionado"});
+    return resposta(200, {status: "ok", mensagem: "Registro adicionado"}, callback);
   } catch(err) {
-    return resposta(500, "Erro: " + err.message);
+    return resposta(500, {erro: "Erro: " + err.message}, callback);
   }
 }
 
 function doDelete(e) {
+  var callback = e.parameter.callback || "";
   try {
-    var aba = e.parameter.aba || "";
+    var aba = e.parameter.aba || e.parameter.sheet || "";
     var id = e.parameter.id || "";
 
-    if (!aba || !id) return resposta(400, "Parametros 'aba' e 'id' obrigatorios");
+    if (!aba || !id) return resposta(400, {erro: "Parametros 'aba' e 'id' obrigatorios"}, callback);
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(aba);
-    if (!sheet) return resposta(404, "Aba nao encontrada");
+    if (!sheet) return resposta(404, {erro: "Aba nao encontrada"}, callback);
 
     var dados = sheet.getDataRange().getValues();
     for (var i = 1; i < dados.length; i++) {
       if (String(dados[i][0]).trim() == id.trim()) {
         sheet.deleteRow(i + 1);
-        return resposta(200, {status: "ok", mensagem: "Registro " + id + " excluido"});
+        return resposta(200, {status: "ok", mensagem: "Registro " + id + " excluido"}, callback);
       }
     }
-    return resposta(404, "ID nao encontrado");
+    return resposta(404, {erro: "ID nao encontrado"}, callback);
   } catch(err) {
-    return resposta(500, "Erro: " + err.message);
+    return resposta(500, {erro: "Erro: " + err.message}, callback);
   }
 }
 
-function resposta(codigo, conteudo) {
-  return ContentService
-    .createTextOutput(JSON.stringify(conteudo))
-    .setMimeType(ContentService.MimeType.JSON);
+function doPut(e) {
+  var callback = "";
+  try {
+    var raw = e.postData.contents;
+    var dados = JSON.parse(raw);
+    var aba = dados.aba || dados.sheet || "";
+    var id = dados.id || "";
+    var valores = dados.valores || dados.values || [];
+    callback = dados.callback || "";
+
+    if (!aba || !id) return resposta(400, {erro: "Parametros 'aba' e 'id' obrigatorios"}, callback);
+    if (!valores || !valores.length) return resposta(400, {erro: "Parametro 'valores' obrigatorio"}, callback);
+
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(aba);
+    if (!sheet) return resposta(404, {erro: "Aba nao encontrada"}, callback);
+
+    var data = sheet.getDataRange().getValues();
+    var cabecalho = data[0];
+    for (var i = 1; i < data.length; i++) {
+      if (String(data[i][0]).trim() == id.trim()) {
+        var range = sheet.getRange(i + 1, 1, 1, cabecalho.length);
+        range.setValues([valores]);
+        return resposta(200, {status: "ok", mensagem: "Registro " + id + " atualizado"}, callback);
+      }
+    }
+    return resposta(404, {erro: "ID nao encontrado"}, callback);
+  } catch(err) {
+    return resposta(500, {erro: "Erro: " + err.message}, callback);
+  }
+}
+
+function resposta(codigo, conteudo, callback) {
+  var json = JSON.stringify(conteudo);
+  var output = ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
+  if (callback) {
+    output = ContentService.createTextOutput(callback + "(" + json + ")").setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return output;
 }
 
 function onOpen() {
