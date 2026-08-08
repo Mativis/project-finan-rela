@@ -247,12 +247,12 @@ div[data-baseweb="select"] > div { border-radius: 8px !important; border: 1.5px 
 def api(metodo, aba, dados=None, valores=None):
     try:
         params = {"acao": metodo, "aba": aba}
-        if metodo == "post":
-            r = _http.post(API_URL, json={"aba": aba, "valores": dados}, timeout=30)
-        elif metodo == "put":
-            r = _http.put(API_URL, json={"aba": aba, "id": dados, "valores": valores}, timeout=30)
+        if metodo == "put":
+            r = _http.post(API_URL, json={"aba": aba, "id": dados, "valores": valores, "acao": "put"}, timeout=30)
         elif metodo == "delete":
-            r = _http.delete(API_URL, params={**params, "id": dados}, timeout=30)
+            r = _http.post(API_URL, json={"aba": aba, "id": dados, "acao": "delete"}, timeout=30)
+        elif metodo == "post":
+            r = _http.post(API_URL, json={"aba": aba, "valores": dados}, timeout=30)
         else:
             r = _http.get(API_URL, params=params, timeout=30)
         if r.status_code == 200:

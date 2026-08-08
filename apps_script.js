@@ -98,15 +98,44 @@ function doPost(e) {
     var raw = e.postData.contents;
     var dados = JSON.parse(raw);
     var aba = dados.aba || dados.sheet || "";
+    var id = dados.id || "";
+    var acao = dados.acao || dados.action || "post";
     var valores = dados.valores || dados.values || [];
     callback = dados.callback || "";
 
     if (!aba) return resposta(400, {erro: "Parametro 'aba' obrigatorio"}, callback);
-    if (!valores || !valores.length) return resposta(400, {erro: "Parametro 'valores' obrigatorio"}, callback);
 
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(aba);
     if (!sheet) return resposta(404, {erro: "Aba '" + aba + "' nao encontrada"}, callback);
+
+    if (acao == "put") {
+      if (!id) return resposta(400, {erro: "Parametro 'id' obrigatorio"}, callback);
+      if (!valores || !valores.length) return resposta(400, {erro: "Parametro 'valores' obrigatorio"}, callback);
+      var data = sheet.getDataRange().getValues();
+      var cabecalho = data[0];
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][0]).trim() == id.trim()) {
+          sheet.getRange(i + 1, 1, 1, cabecalho.length).setValues([valores]);
+          return resposta(200, {status: "ok", mensagem: "Registro " + id + " atualizado"}, callback);
+        }
+      }
+      return resposta(404, {erro: "ID nao encontrado"}, callback);
+    }
+
+    if (acao == "delete") {
+      if (!id) return resposta(400, {erro: "Parametro 'id' obrigatorio"}, callback);
+      var data = sheet.getDataRange().getValues();
+      for (var i = 1; i < data.length; i++) {
+        if (String(data[i][0]).trim() == id.trim()) {
+          sheet.deleteRow(i + 1);
+          return resposta(200, {status: "ok", mensagem: "Registro " + id + " removido"}, callback);
+        }
+      }
+      return resposta(404, {erro: "ID nao encontrado"}, callback);
+    }
+
+    if (!valores || !valores.length) return resposta(400, {erro: "Parametro 'valores' obrigatorio"}, callback);
 
     sheet.appendRow(valores);
     return resposta(200, {status: "ok", mensagem: "Registro adicionado"}, callback);
