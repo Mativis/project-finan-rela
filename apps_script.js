@@ -13,7 +13,7 @@ function setupBancoDados() {
     ["15","Outros","Despesa"]
   ].forEach(function(c){ ss.getSheetByName("Categorias").appendRow(c); });
 
-  criarAba(ss, "Transacoes", ["ID","Data","Tipo","Categoria","Descricao","Valor","Parcelas","Responsavel"]);
+  criarAba(ss, "Transacoes", ["ID","Data","Tipo","Categoria","Descricao","Valor","Parcelas","Responsavel","Fixo"]);
   criarAba(ss, "Metas", ["ID","Nome","ValorAlvo","ValorAtual","Prazo"]);
   criarAba(ss, "Config", ["Chave","Valor"]);
   ss.getSheetByName("Config").appendRow(["Moeda","BRL"]);

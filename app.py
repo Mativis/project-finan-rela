@@ -152,15 +152,26 @@ section[data-testid="stSidebar"] .stButton > div > button[kind="primary"]:hover 
 .tx-row .a .t { margin-top: 0.15rem; }
 
 /* ── Goal card ── */
-.g-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 1.1rem 1.35rem; margin-bottom: 0.75rem; box-shadow: var(--shadow); transition: all 0.2s ease; }
+.g-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 0; margin-bottom: 0.85rem; box-shadow: var(--shadow); transition: all 0.2s ease; overflow: hidden; display: flex; }
 .g-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.g-card .hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
-.g-card .hdr .nm { font-weight: 700; font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 0.4rem; }
-.g-card .hdr .pc { font-weight: 600; font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 100px; }
+.g-card .g-bar { width: 5px; flex-shrink: 0; }
+.g-card .g-body { flex: 1; padding: 1.1rem 1.35rem; }
+.g-card .hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; gap: 0.5rem; }
+.g-card .hdr .nm { font-weight: 700; font-size: 0.88rem; color: var(--text); display: flex; align-items: center; gap: 0.4rem; }
+.g-card .hdr .pc { font-weight: 600; font-size: 0.72rem; padding: 0.22rem 0.7rem; border-radius: 100px; white-space: nowrap; }
 .g-card .hdr .pc.done { background: var(--green-bg); color: var(--green-2); border: 1px solid var(--green-br); }
 .g-card .hdr .pc.go  { background: var(--brand-bg); color: var(--brand-2); border: 1px solid var(--brand-br); }
-.g-card .vals { font-size: 0.78rem; color: var(--text-2); font-family: 'JetBrains Mono', monospace; margin-bottom: 0.2rem; }
-.g-card .due { font-size: 0.68rem; color: var(--text-3); }
+.g-card .hdr .pc.warn { background: var(--amber-bg); color: var(--amber-2); border: 1px solid var(--amber-br); }
+.g-card .hdr .pc.over { background: var(--red-bg); color: var(--red-2); border: 1px solid var(--red-br); }
+.g-card .vals { font-size: 0.8rem; color: var(--text-2); font-family: 'JetBrains Mono', monospace; display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.55rem; }
+.g-card .vals .cur { font-weight: 600; color: var(--text); }
+.g-card .vals .tgt { font-size: 0.72rem; color: var(--text-3); }
+.g-card .due { font-size: 0.7rem; color: var(--text-3); margin-top: 0.55rem; display: flex; align-items: center; gap: 0.35rem; }
+.g-card .g-track { height: 8px; background: var(--border); border-radius: 100px; overflow: hidden; }
+.g-card .g-fill { height: 100%; border-radius: 100px; background: linear-gradient(90deg, var(--brand), var(--brand-2)); transition: width 0.5s ease; }
+.g-card.done .g-bar { background: var(--green-2); }
+.g-card.done .g-fill { background: linear-gradient(90deg, var(--green-2), #22c55e); }
+.g-card.go .g-bar { background: var(--brand-2); }
 
 /* ── Empty ── */
 .empty { text-align: center; padding: 2.5rem 1.5rem; border: 1.5px dashed var(--border); border-radius: 16px; background: var(--surface); }
@@ -233,11 +244,13 @@ div[data-baseweb="select"] > div { border-radius: 8px !important; border: 1.5px 
 </style>
 """, unsafe_allow_html=True)
 
-def api(metodo, aba, dados=None):
+def api(metodo, aba, dados=None, valores=None):
     try:
         params = {"acao": metodo, "aba": aba}
         if metodo == "post":
             r = _http.post(API_URL, json={"aba": aba, "valores": dados}, timeout=30)
+        elif metodo == "put":
+            r = _http.put(API_URL, json={"aba": aba, "id": dados, "valores": valores}, timeout=30)
         elif metodo == "delete":
             r = _http.delete(API_URL, params={**params, "id": dados}, timeout=30)
         else:
@@ -272,6 +285,9 @@ def escrever(aba, valores):
 def excluir(aba, id_registro):
     return api("delete", aba, id_registro)
 
+def atualizar(aba, id_registro, valores):
+    return api("put", aba, id_registro, valores)
+
 def prox_id(df):
     if df.empty:
         return "1"
@@ -295,6 +311,51 @@ def preparar_df(df):
         df["Ano"] = df["Data"].dt.year
         df["MesAno"] = df["Data"].dt.to_period("M").astype(str)
     return df
+
+def auto_gerar_fixos():
+    now = datetime.now()
+    mes_atual = now.month
+    ano_atual = now.year
+    df = ler("Transacoes")
+    if df.empty or "Fixo" not in df.columns:
+        return 0
+
+    df = preparar_df(df)
+    fixos = df[(df["Fixo"] == "Sim") & (df["Tipo"] == "Despesa")]
+    if fixos.empty:
+        return 0
+
+    fixos_unicos = fixos.drop_duplicates(subset=["Descricao", "Categoria", "Responsavel", "Valor", "Parcelas", "Tipo"])
+    criadas = 0
+    df_t = ler("Transacoes")
+    df_t = preparar_df(df_t)
+
+    for _, f in fixos_unicos.iterrows():
+        existe = df_t[
+            (df_t["Data"].dt.month == mes_atual) &
+            (df_t["Data"].dt.year == ano_atual) &
+            (df_t["Descricao"] == f["Descricao"]) &
+            (df_t["Categoria"] == f["Categoria"]) &
+            (df_t["Responsavel"] == f["Responsavel"]) &
+            (df_t["Valor"] == f["Valor"])
+        ]
+        if existe.empty:
+            dia = min(f["Data"].day if pd.notna(f["Data"]) else now.day, 28)
+            try:
+                dt = date(ano_atual, mes_atual, dia)
+            except ValueError:
+                dt = date(ano_atual, mes_atual, 1)
+            res = escrever("Transacoes", [
+                prox_id(df_t), dt.strftime("%Y-%m-%d"),
+                f["Tipo"], f["Categoria"], f["Descricao"],
+                str(f["Valor"]), str(f["Parcelas"]), f["Responsavel"], "Sim"
+            ])
+            if res and res.get("status") == "ok":
+                criadas += 1
+
+    if criadas > 0:
+        st.info(f"🔁 {criadas} gasto(s) fixo(s) registrado(s) automaticamente neste mes.")
+    return criadas
 
 def kpi(label, value, footer="", kind="neut"):
     f = f'<span class="k-foot {kind}">{footer}</span>' if footer else ""
@@ -346,6 +407,8 @@ def sidebar():
         return st.session_state.page
 
 def page_dashboard():
+    auto_gerar_fixos()
+
     df = ler("Transacoes")
     now = datetime.now()
 
@@ -362,13 +425,15 @@ def page_dashboard():
     receitas = dm[dm["Tipo"] == "Receita"]["Valor"].sum() if not dm.empty else 0
     despesas = dm[dm["Tipo"] == "Despesa"]["Valor"].sum() if not dm.empty else 0
     saldo = receitas - despesas
+    fixos = dm[(dm["Tipo"] == "Despesa") & (dm.get("Fixo", "Nao") == "Sim")]["Valor"].sum() if not dm.empty else 0
+    variaveis = despesas - fixos
 
     st.markdown(f"""
-    <div class="kpi-grid" style="display:flex; gap:0.75rem;">
+    <div style="display:flex; gap:0.75rem; margin-bottom:1rem; flex-wrap:wrap;">
         {kpi("Receitas", f"R$ {receitas:,.2f}", f"▲ {MESES[mes-1]}", "up")}
         {kpi("Despesas", f"R$ {despesas:,.2f}", f"▼ {MESES[mes-1]}", "down")}
+        {kpi("Gastos Fixos", f"R$ {fixos:,.2f}", f"{(fixos/despesas*100):.0f}%" if despesas > 0 else "", "neut")}
         {kpi("Saldo", f"R$ {saldo:,.2f}", "▲ Positivo" if saldo >= 0 else "▼ Negativo", "up" if saldo >= 0 else "down")}
-        {kpi("Transacoes", str(len(dm)), f"{MESES[mes-1]} {ano}", "neut")}
     </div>
     """, unsafe_allow_html=True)
 
@@ -378,13 +443,23 @@ def page_dashboard():
 
     e1, e2 = st.columns([5, 4])
     with e1:
-        with panel("Despesas por Categoria", "🏷️"):
-            dc = dm[dm["Tipo"] == "Despesa"].groupby("Categoria")["Valor"].sum().sort_values(ascending=True)
-            if not dc.empty:
-                st.bar_chart(dc, height=200, color="#dc2626")
-            else:
-                st.markdown('<div class="empty"><p>Sem despesas no periodo</p></div>', unsafe_allow_html=True)
-        panel_end()
+        g1, g2 = st.columns(2)
+        with g1:
+            with panel("Despesas por Categoria", "🏷️"):
+                dc = dm[dm["Tipo"] == "Despesa"].groupby("Categoria")["Valor"].sum().sort_values(ascending=True)
+                if not dc.empty:
+                    st.bar_chart(dc, height=170, color="#dc2626")
+                else:
+                    st.markdown('<div class="empty"><p>Sem despesas</p></div>', unsafe_allow_html=True)
+            panel_end()
+        with g2:
+            with panel("Fixos vs Variaveis", "🔁"):
+                if despesas > 0:
+                    fv = pd.DataFrame({"Tipo": ["Fixos", "Variaveis"], "Valor": [fixos, variaveis]}).set_index("Tipo")
+                    st.bar_chart(fv, height=170, color=["#1a56db", "#dc2626"])
+                else:
+                    st.markdown('<div class="empty"><p>Sem despesas</p></div>', unsafe_allow_html=True)
+            panel_end()
     with e2:
         with panel("Ultimas Transacoes", "🕐"):
             ult = dm.sort_values("Data", ascending=False).head(7)
@@ -417,6 +492,8 @@ def page_nova():
             c5, c6 = st.columns(2)
             valor = c5.number_input("Valor (R$)", min_value=0.01, step=0.01, format="%.2f")
             resp = c6.text_input("Responsavel", placeholder="Quem pagou?")
+            c7, c8 = st.columns(2)
+            fixo = c7.checkbox("🔁 Despesa Fixa (recorrente)", value=False, help="Marque para gastos que se repetem todo mes como aluguel, assinaturas, etc.")
             st.markdown("<div style='height:0.35rem'></div>", unsafe_allow_html=True)
             if st.form_submit_button("Salvar Transacao", type="primary", use_container_width=True):
                 erros = []
@@ -427,7 +504,8 @@ def page_nova():
                     st.warning(f"Informe: {', '.join(erros)}")
                 else:
                     df_t = ler("Transacoes")
-                    res = escrever("Transacoes", [prox_id(df_t), data.strftime("%Y-%m-%d"), tipo, categoria, desc, str(valor), str(parcelas), resp])
+                    fixo_val = "Sim" if fixo else "Nao"
+                    res = escrever("Transacoes", [prox_id(df_t), data.strftime("%Y-%m-%d"), tipo, categoria, desc, str(valor), str(parcelas), resp, fixo_val])
                     if res and res.get("status") == "ok":
                         st.success("Transacao salva!")
                         st.rerun()
@@ -443,23 +521,32 @@ def page_transacoes():
         return
     df = preparar_df(df)
 
+    tem_fixo = "Fixo" in df.columns
+
     with panel("Filtros", "🔍"):
-        c1, c2, c3, c4 = st.columns(4)
-        tf = c1.selectbox("Tipo", ["Todos", "Receita", "Despesa"])
-        cf = c2.selectbox("Categoria", ["Todas"] + sorted(df["Categoria"].dropna().unique()))
-        rf = c3.selectbox("Responsavel", ["Todos"] + sorted(df["Responsavel"].dropna().unique()))
-        bs = c4.text_input("Buscar", placeholder="Descricao...")
+        cols = 5 if tem_fixo else 4
+        cols_list = st.columns(cols)
+        tf = cols_list[0].selectbox("Tipo", ["Todos", "Receita", "Despesa"])
+        cf = cols_list[1].selectbox("Categoria", ["Todas"] + sorted(df["Categoria"].dropna().unique()))
+        rf = cols_list[2].selectbox("Responsavel", ["Todos"] + sorted(df["Responsavel"].dropna().unique()))
+        if tem_fixo:
+            ff = cols_list[3].selectbox("Fixo", ["Todos", "Sim", "Nao"])
+        else:
+            ff = "Todos"
+        bs = cols_list[-1].text_input("Buscar", placeholder="Descricao...")
     panel_end()
 
     flt = df.copy()
     if tf != "Todos": flt = flt[flt["Tipo"] == tf]
     if cf != "Todas": flt = flt[flt["Categoria"] == cf]
     if rf != "Todos": flt = flt[flt["Responsavel"] == rf]
+    if ff != "Todos" and tem_fixo: flt = flt[flt["Fixo"] == ff]
     if bs: flt = flt[flt["Descricao"].str.contains(bs, case=False, na=False)]
 
     rec = flt[flt["Tipo"] == "Receita"]["Valor"].sum()
     desp = flt[flt["Tipo"] == "Despesa"]["Valor"].sum()
     sal = rec - desp
+    qtd_fixos = len(flt[(flt.get("Fixo", "Nao") == "Sim") & (flt["Tipo"] == "Despesa")]) if tem_fixo else 0
 
     st.markdown(f"""
     <div style="display:flex; gap:0.75rem; margin-bottom:1rem;">
@@ -467,12 +554,16 @@ def page_transacoes():
         {kpi("Receitas", f"R$ {rec:,.2f}", kind="up")}
         {kpi("Despesas", f"R$ {desp:,.2f}", kind="down")}
         {kpi("Saldo", f"R$ {sal:,.2f}", kind="up" if sal >= 0 else "down")}
+        {kpi("Fixos", str(qtd_fixos), kind="neut") if tem_fixo else ""}
     </div>
     """, unsafe_allow_html=True)
 
     with panel(f"Registros ({len(flt)})", "📄"):
+        cols_df = ["ID","Data","Tipo","Categoria","Descricao","Valor","Parcelas","Responsavel"]
+        if tem_fixo:
+            cols_df.append("Fixo")
         st.dataframe(
-            flt.sort_values("Data", ascending=False)[["ID","Data","Tipo","Categoria","Descricao","Valor","Parcelas","Responsavel"]].reset_index(drop=True),
+            flt.sort_values("Data", ascending=False)[cols_df].reset_index(drop=True),
             use_container_width=True, hide_index=True, height=min(len(flt)*38+60, 420))
     panel_end()
 
@@ -555,34 +646,107 @@ def page_metas():
                         st.error("Erro ao salvar")
         panel_end()
 
-    if not df.empty:
-        df["ValorAlvo"] = sn(df["ValorAlvo"])
-        df["ValorAtual"] = sn(df["ValorAtual"])
-        talvo = df["ValorAlvo"].sum()
-        tatual = df["ValorAtual"].sum()
-        pctg = min(tatual / talvo, 1.0) * 100 if talvo > 0 else 0
-        conc = len(df[df["ValorAtual"] >= df["ValorAlvo"]])
+    if df.empty:
+        st.markdown('<div class="empty"><div class="ic">🎯</div><p>Nenhuma meta cadastrada</p><div class="sb">Defina um objetivo acima para comecar</div></div>', unsafe_allow_html=True)
+        return
+
+    df["ValorAlvo"] = sn(df["ValorAlvo"])
+    df["ValorAtual"] = sn(df["ValorAtual"])
+    df["Prazo"] = pd.to_datetime(df.get("Prazo"), errors="coerce")
+
+    talvo = df["ValorAlvo"].sum()
+    tatual = df["ValorAtual"].sum()
+    pctg = min(tatual / talvo, 1.0) * 100 if talvo > 0 else 0
+    conc = len(df[df["ValorAtual"] >= df["ValorAlvo"]])
+    pend = len(df[df["ValorAtual"] < df["ValorAlvo"]])
+
+    st.markdown(f"""
+    <div style="display:flex; gap:0.75rem; margin:1rem 0;">
+        {kpi("Total em Metas", f"R$ {talvo:,.2f}", kind="neut")}
+        {kpi("Total Acumulado", f"R$ {tatual:,.2f}", kind="up")}
+        {kpi("Progresso Geral", f"{pctg:.0f}%", f"{conc} concluidas", "up" if conc == len(df) else "neut")}
+        {kpi("Pendentes", str(pend), "metas em andamento", "down" if pend else "neut")}
+    </div>
+    """, unsafe_allow_html=True)
+
+    hoje = date.today()
+    card_ativo = lambda m: m["ValorAtual"] < m["ValorAlvo"]
+    ativas = df[df.apply(card_ativo, axis=1)].sort_values("ValorAtual", ascending=False)
+    feitas = df[~df.apply(card_ativo, axis=1)].sort_values("ValorAlvo", ascending=False)
+
+    def render_meta(m):
+        pct = min(m["ValorAtual"] / m["ValorAlvo"], 1.0) * 100 if m["ValorAlvo"] > 0 else 0
+        feito = pct >= 100
+        cls = "done" if feito else "go"
+        ic = "✅" if feito else "🎯"
+
+        prazo_info = ""
+        if pd.notna(m["Prazo"]):
+            pdt = m["Prazo"].date()
+            dias = (pdt - hoje).days
+            if feito:
+                chip = '<span class="pc done">Concluida</span>'
+            elif dias < 0:
+                chip = f'<span class="pc over">Prazo vencido ha {-dias}d</span>'
+                cls = "go"
+            elif dias <= 30:
+                chip = f'<span class="pc warn">Faltam {dias}d</span>'
+            else:
+                chip = f'<span class="pc go">Faltam {dias}d</span>'
+            meses = max((dias // 30) + 1, 1) if dias > 0 else None
+            taxa = (m["ValorAlvo"] - m["ValorAtual"]) / meses if meses else 0
+            prazo_info = f'<div class="due">📅 {pdt.strftime("%d/%m/%Y")}'
+            if not feito and taxa > 0:
+                prazo_info += f' &middot; Guardar <strong>R$ {taxa:,.2f}/mes</strong>'
+            prazo_info += '</div>'
+        elif not feito:
+            chip = f'<span class="pc go">{pct:.0f}%</span>'
+        else:
+            chip = '<span class="pc done">Concluida</span>'
 
         st.markdown(f"""
-        <div style="display:flex; gap:0.75rem; margin:1rem 0;">
-            {kpi("Total em Metas", f"R$ {talvo:,.2f}", kind="neut")}
-            {kpi("Total Acumulado", f"R$ {tatual:,.2f}", kind="up")}
-            {kpi("Progresso", f"{pctg:.0f}%", f"{conc} de {len(df)} concluidas", "up" if conc == len(df) else "neut")}
-        </div>
-        """, unsafe_allow_html=True)
+        <div class="g-card {cls}">
+            <div class="g-bar"></div>
+            <div class="g-body">
+                <div class="hdr"><span class="nm">{ic} {m["Nome"]}</span>{chip}</div>
+                <div class="vals"><span class="cur">R$ {m["ValorAtual"]:,.2f}</span><span class="tgt">de R$ {m["ValorAlvo"]:,.2f} &middot; {pct:.0f}%</span></div>
+                <div class="g-track"><div class="g-fill" style="width:{pct:.0f}%"></div></div>
+                {prazo_info}
+            </div>
+        </div>""", unsafe_allow_html=True)
 
-        for _, m in df.iterrows():
-            pct = min(m["ValorAtual"] / m["ValorAlvo"], 1.0) * 100 if m["ValorAlvo"] > 0 else 0
-            sc = "done" if pct >= 100 else "go"
-            ic = "✅" if pct >= 100 else "🎯"
-            st.markdown(f"""
-            <div class="g-card">
-                <div class="hdr"><span class="nm">{ic} {m['Nome']}</span><span class="pc {sc}">{pct:.0f}%</span></div>
-                <div class="vals">R$ {m['ValorAtual']:,.2f} / R$ {m['ValorAlvo']:,.2f}</div>
-                <div class="due">Prazo: {m.get('Prazo', 'N/A')}</div>
-            </div>""", unsafe_allow_html=True)
-            if pct < 100:
-                st.progress(int(pct))
+        a1, a2, a3 = st.columns([3, 1, 1])
+        novo = a1.number_input("Adicionar valor", min_value=0.0, step=50.0, format="%.2f", key=f"mv_{m['ID']}", label_visibility="collapsed", placeholder="Adicionar R$...")
+        if a2.button("➕", key=f"mb_{m['ID']}", use_container_width=True, help="Adicionar valor"):
+            if novo > 0:
+                novo_atual = m["ValorAtual"] + novo
+                res = atualizar("Metas", m["ID"], [m["ID"], m["Nome"], str(m["ValorAlvo"]), str(novo_atual), m["Prazo"].strftime("%Y-%m-%d") if pd.notna(m["Prazo"]) else ""])
+                if res and res.get("status") == "ok":
+                    st.success("Valor adicionado!"); st.rerun()
+                else:
+                    st.error("Erro ao atualizar")
+        if a3.button("🗑️", key=f"gd_{m['ID']}", use_container_width=True, help="Excluir meta"):
+            res = excluir("Metas", m["ID"])
+            if res and res.get("status") == "ok":
+                st.success("Meta excluida!"); st.rerun()
+            else:
+                st.error("Erro ao excluir")
+
+    with panel(f"Em Andamento ({len(ativas)})", "🚀"):
+        if not ativas.empty:
+            for _, m in ativas.iterrows():
+                render_meta(m)
+        else:
+            st.markdown('<div class="empty"><p>Nenhuma meta em andamento</p></div>', unsafe_allow_html=True)
+    panel_end()
+
+    with panel(f"Concluidas ({len(feitas)})", "✅"):
+        if not feitas.empty:
+            for _, m in feitas.iterrows():
+                render_meta(m)
+        else:
+            st.markdown('<div class="empty"><p>Nenhuma meta concluida ainda</p></div>', unsafe_allow_html=True)
+    panel_end()
 
 def page_categorias():
     hdr("Categorias", "Gerencie as categorias de receitas e despesas")
@@ -642,7 +806,7 @@ def page_manual():
 | **Aba** | **Colunas** |
 |---|---|
 | **Categorias** | ID, Nome, Tipo |
-| **Transacoes** | ID, Data, Tipo, Categoria, Descricao, Valor, Parcelas, Responsavel |
+| **Transacoes** | ID, Data, Tipo, Categoria, Descricao, Valor, Parcelas, Responsavel, Fixo |
 | **Metas** | ID, Nome, ValorAlvo, ValorAtual, Prazo |
 | **Config** | Chave, Valor |
         """)
